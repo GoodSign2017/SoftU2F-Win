@@ -1,10 +1,10 @@
-﻿using System;
+﻿using APDU;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using U2FLib.Storage;
-using APDU;
 
 namespace U2FLib
 {
@@ -20,7 +20,7 @@ namespace U2FLib
         private IRawConvertible HandleRegisterRequest(byte[] rawData, IO_CTL_XFER_MESSAGE request)
         {
             var req = new RegisterRequest(rawData);
-            var facet = KnownFacets.GetKnownFacet(req.ApplicationParameter);
+            var facet = getFacetString(req.ApplicationParameter);
             var ss = Encoding.UTF8.GetString(req.ApplicationParameter);
             if (facet == "bogus")
             {
@@ -73,7 +73,7 @@ namespace U2FLib
 
             if (req.Control == Control.CheckOnly) return CreateError(ProtocolErrorCode.ConditionNoSatisfied);
 
-            var facet = KnownFacets.GetKnownFacet(req.ApplicationParameter);
+            var facet = getFacetString(req.ApplicationParameter);
 
             if (!UserPresence.Present)
             {
@@ -118,6 +118,17 @@ namespace U2FLib
         private IRawConvertible CreateError(ProtocolErrorCode code)
         {
             return new ErrorResponse(code);
+        }
+
+        private string getFacetString(byte[] applicationParameter)
+        {
+            string facet = KnownFacets.GetKnownFacet(applicationParameter);
+            if (string.IsNullOrEmpty(facet))
+            {
+                var hexTag = Convert.ToHexString(applicationParameter[^4..]);
+                facet = $"Unknown Facet (...{hexTag})";
+            }
+            return facet;
         }
     }
 }
