@@ -23,6 +23,7 @@ namespace SoftU2FDaemon
         private IServiceProvider _serviceProvider;
         private NotifyIcon _trayIcon;
         private ContextMenu _trayMenu;
+        private KeyControl _keyControlForm;
 
         public App()
         {
@@ -159,6 +160,7 @@ namespace SoftU2FDaemon
 
             _trayMenu.Items.Add("Reset", null, OnResetClickedOnClick);
             _trayMenu.Items.Add("-");
+            _trayMenu.Items.Add("Manage Keys", null, OnManageKeysClick);
             _trayMenu.Items.Add("Exit", null, (sender, args) => {
                 _exitRequested = true;
                 Application.Exit();
@@ -171,6 +173,8 @@ namespace SoftU2FDaemon
                 Icon = new Icon("tray.ico"),
                 Visible = true
             };
+
+            _trayIcon.MouseDoubleClick += OnManageKeysClick;
 
             _trayIcon.BalloonTipClicked += (sender, args) =>
             {
@@ -193,6 +197,22 @@ namespace SoftU2FDaemon
                 _trayIcon.Visible = false;
                 _trayIcon.Dispose();
             };
+        }
+
+        private void OnManageKeysClick(object sender, EventArgs e)
+        {
+            if (_keyControlForm == null)
+            {
+                using var keyControlForm = new KeyControl();
+                    _keyControlForm = keyControlForm;
+                    keyControlForm.ShowDialog();
+                }
+                _keyControlForm = null;
+            }
+            else
+            {
+                _keyControlForm.Focus();
+            }
         }
 
         private void OnAutoStartClick(object sender, EventArgs e)
@@ -259,7 +279,11 @@ namespace SoftU2FDaemon
         protected override void Dispose(bool disposing)
         {
             if (disposed) return;
-            if (disposing) _cancellation.Cancel();
+            if (disposing)
+            {
+                _cancellation.Cancel();
+                if (_keyControlForm != null) { _keyControlForm.Dispose(); }
+            }
             base.Dispose(disposing);
         }
 
