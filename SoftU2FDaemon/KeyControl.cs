@@ -113,13 +113,13 @@ namespace SoftU2FDaemon
             using var dialog = new KeyRename(_keyPair.Label);
             var result = dialog.ShowDialog();
 
-            if (result != DialogResult.OK || dialog.renamedValue == _keyPair.Label)
+            if (result != DialogResult.OK || dialog.RenamedValue == _keyPair.Label)
             {
                 return;
             }
 
             using var context = new AppDbContext();
-            _keyPair.Label = dialog.renamedValue;
+            _keyPair.Label = dialog.RenamedValue;
             context.Update(_keyPair);
             context.SaveChanges();
         }

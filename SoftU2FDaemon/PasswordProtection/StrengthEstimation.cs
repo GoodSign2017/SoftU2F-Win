@@ -25,57 +25,35 @@ namespace SoftU2FDaemon.PasswordProtection
             PASS_STRENGTH_STRONG
         };
 
-        private bool estimated;
-        private bool goodEnough;
-        private int? goodEnoughFrom;
-        private PasswordStrength currentPasswordStrength;
-        private StringBuilder zxcvbnOut;
+        private bool estimated = false;
+        private bool goodEnough = false;
+        private int? goodEnoughFrom = null;
+        private PasswordStrength currentPasswordStrength = PASS_STRENGTH_NONE;
+        private readonly StringBuilder zxcvbnOut = new();
         private readonly IEstimatedOn componentAccess;
         private readonly Func<SecureString> secretAccess;
 
         private SecureString Secret => secretAccess();
 
-        private bool _estimateStrength = false;
-
-        public bool EstimateStrength
-        {
-            get => _estimateStrength;
-            set { _estimateStrength = value; InitEstimation(); }
-        }
-
         public StrengthEstimation(IEstimatedOn componentAccess, Func<SecureString> secretAccess)
         {
             this.componentAccess = componentAccess;
             this.secretAccess = secretAccess;
+            EnableEstimation();
         }
 
-        public void InitEstimation()
+        public void EnableEstimation()
         {
-            ResetEstimation();
+            componentAccess.EstimateTick += EstimateTimer_Tick;
+            componentAccess.ChangedAtEvent += OnChangedAtEvent;
             PerformEstimation();
         }
 
-        private void ResetEstimation()
+        public void DisableEstimation()
         {
-            estimated = false;
-            goodEnough = false;
-            goodEnoughFrom = null;
-
-            if (EstimateStrength)
-            {
-                componentAccess.EstimateTick += EstimateTimer_Tick;
-                componentAccess.ChangedAtEvent += OnChangedAtEvent;
-            }
-            else
-            {
-                componentAccess.EstimateTick -= EstimateTimer_Tick;
-                componentAccess.ChangedAtEvent -= OnChangedAtEvent;
-            }
-
-            currentPasswordStrength = PASS_STRENGTH_NONE;
-            zxcvbnOut = EstimateStrength ? new StringBuilder() : null;
-            componentAccess.EstimationVisible = EstimateStrength;
-            componentAccess.ScoreVisible = EstimateStrength;
+            componentAccess.EstimateTick -= EstimateTimer_Tick;
+            componentAccess.ChangedAtEvent -= OnChangedAtEvent;
+            zxcvbnOut.Clear();
         }
 
         private void OnChangedAtEvent(object sender, ChangedAtEventArgs e)
@@ -92,7 +70,7 @@ namespace SoftU2FDaemon.PasswordProtection
 
         private void PerformEstimation()
         {
-            if (!EstimateStrength || estimated) return;
+            if (estimated) return;
 
             if (Secret.Length > 0)
             {
@@ -179,9 +157,7 @@ namespace SoftU2FDaemon.PasswordProtection
 
     public interface IEstimatedOn
     {
-        public bool EstimationVisible { get; set; }
         public string EstimationText { get; set; }
-        public bool ScoreVisible { get; set; }
         public Color ScoreForeColor { get; set; }
         public Color ScoreBackColor { get; set; }
         public string ScoreText { get; set; }

@@ -74,10 +74,9 @@ namespace U2FLib.Security
             {
                 return CngKey.Exists(keyname, KEY_PROVIDER);
             }
-            catch (CryptographicException e)
+            catch (CryptographicException e) when (e.Message == "Key does not exist.")
             {
-                if (e.Message == "Key does not exist.") return false;
-                throw;
+                return false;
             }
         }
 

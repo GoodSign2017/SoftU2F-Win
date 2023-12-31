@@ -52,7 +52,6 @@
             // ButtonOk
             // 
             ButtonOk.DialogResult = System.Windows.Forms.DialogResult.OK;
-            ButtonOk.Enabled = false;
             ButtonOk.Location = new System.Drawing.Point(198, 56);
             ButtonOk.Name = "ButtonOk";
             ButtonOk.Size = new System.Drawing.Size(75, 23);

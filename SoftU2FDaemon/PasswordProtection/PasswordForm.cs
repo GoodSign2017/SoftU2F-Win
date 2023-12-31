@@ -7,10 +7,10 @@ using System.Windows.Forms;
 
 namespace SoftU2FDaemon.PasswordProtection
 {
-    public partial class PasswordForm : Form
+    sealed public partial class PasswordForm : Form
     {
         private const char SECRET_CHAR = '●';
-        private readonly StrengthEstimation estimation;
+        private StrengthEstimation estimation;
         private readonly SecureString secret = new();
         private event EventHandler<ChangedAtEventArgs> ChangedAtEvent;
         private bool _allowReveal = true;
@@ -18,18 +18,42 @@ namespace SoftU2FDaemon.PasswordProtection
         public bool AllowReveal
         {
             get => _allowReveal;
-            set { _allowReveal = value; InitLinkReveal(); }
+            init { _allowReveal = value; InitLinkReveal(); }
         }
 
-        public bool EstimateStrength { get => estimation.EstimateStrength; set => estimation.EstimateStrength = value; }
-        public byte[] Salt { get; set; } = RandomNumberGenerator.GetBytes(64);
+        public readonly PwdFormMode Mode;
+        public byte[] Salt { get; init; } = RandomNumberGenerator.GetBytes(64);
 
-        public PasswordForm()
+        public PasswordForm(PwdFormMode mode = PwdFormMode.MODE_LOGIN)
         {
-            estimation = new(new PFormEstimation(this), () => EstimateStrength ? secret : null);
+            Mode = mode;
             InitializeComponent();
+            InitRegisterMode();
             InitLinkReveal();
             Focus();
+        }
+
+        private void InitRegisterMode()
+        {
+            if (Mode != PwdFormMode.MODE_LOGIN) ButtonOk.Enabled = false;
+            if (Mode != PwdFormMode.MODE_REGISTER_ESTIMATE) return;
+
+            var pFormEstimation = new PFormEstimation(this);
+            var secretRef = secret;
+
+            Height = 320;
+            EstimationBox.Visible = true;
+            ScoreIndicator.Visible = true;
+            estimation = new(pFormEstimation, () => secretRef);
+            FormClosed += OnFormClosed;
+
+            void OnFormClosed(object sender, EventArgs e)
+            {
+                secretRef = null;
+                estimation.DisableEstimation();
+                FormClosed -= OnFormClosed;
+                estimation = null;
+            }
         }
 
         private void ButtonOk_Click(object sender, EventArgs e)
@@ -89,7 +113,8 @@ namespace SoftU2FDaemon.PasswordProtection
             PasswordBox.Text = new string(chars);
             PasswordBox.SelectionStart = changeEnd;
             ChangedAtEvent?.Invoke(this, new() { ChangedStart = changeStart });
-            ButtonOk.Enabled = chars.Length > 10;
+
+            if (Mode != PwdFormMode.MODE_LOGIN) ButtonOk.Enabled = chars.Length > 10;
         }
 
         private void PasswordBox_Pasting(object sender, PastingEventArgs e)
@@ -142,12 +167,12 @@ namespace SoftU2FDaemon.PasswordProtection
 
         private void InitLinkReveal()
         {
-            LinkReveal.Visible = _allowReveal;
+            LinkReveal.Visible = AllowReveal;
         }
 
         private void LinkReveal_MouseUp(object sender, MouseEventArgs e)
         {
-            if (!_allowReveal)
+            if (!AllowReveal)
             {
                 return;
             }
@@ -187,29 +212,26 @@ namespace SoftU2FDaemon.PasswordProtection
         #endregion
 
         #region IEstimatedOn implementor
+
         private class PFormEstimation : IEstimatedOn
         {
             private readonly PasswordForm f;
-
             internal protected PFormEstimation(PasswordForm form) => f = form;
-
-            public bool EstimationVisible
-            {
-                get => f.EstimationBox.Visible;
-                set { f.EstimationBox.Visible = value; f.Height = value ? 320 : 128; }
-            }
-
             public string EstimationText { get => f.EstimationBox.Text; set => f.EstimationBox.Text = value; }
-            public bool ScoreVisible { get => f.ScoreIndicator.Visible; set => f.ScoreIndicator.Visible = value; }
             public Color ScoreForeColor { get => f.ScoreIndicator.ForeColor; set => f.ScoreIndicator.ForeColor = value; }
             public Color ScoreBackColor { get => f.ScoreIndicator.BackColor; set => f.ScoreIndicator.BackColor = value; }
             public string ScoreText { get => f.ScoreIndicator.Text; set => f.ScoreIndicator.Text = value; }
-
             public event EventHandler<ChangedAtEventArgs> ChangedAtEvent { add => f.ChangedAtEvent += value; remove => f.ChangedAtEvent -= value; }
-
             public event EventHandler EstimateTick { add => f.EstimateTimer.Tick += value; remove => f.EstimateTimer.Tick -= value; }
-
         }
+
         #endregion
+        }
+
+    public enum PwdFormMode
+    {
+        MODE_LOGIN,
+        MODE_REGISTER_ESTIMATE,
+        MODE_REGISTER_NO_ESTIMATE,
     }
 }
