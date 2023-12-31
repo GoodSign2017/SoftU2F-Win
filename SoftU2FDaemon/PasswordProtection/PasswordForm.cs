@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Cryptography;
@@ -9,19 +10,23 @@ namespace SoftU2FDaemon.PasswordProtection
     public partial class PasswordForm : Form
     {
         private const char SECRET_CHAR = '●';
-
-        private readonly SecureString _secret = new();
-        public byte[] Salt { get; set; } = RandomNumberGenerator.GetBytes(64);
-
+        private readonly StrengthEstimation estimation;
+        private readonly SecureString secret = new();
+        private event EventHandler<ChangedAtEventArgs> ChangedAtEvent;
         private bool _allowReveal = true;
+
         public bool AllowReveal
         {
-            get { return _allowReveal; }
+            get => _allowReveal;
             set { _allowReveal = value; InitLinkReveal(); }
         }
 
+        public bool EstimateStrength { get => estimation.EstimateStrength; set => estimation.EstimateStrength = value; }
+        public byte[] Salt { get; set; } = RandomNumberGenerator.GetBytes(64);
+
         public PasswordForm()
         {
+            estimation = new(new PFormEstimation(this), () => EstimateStrength ? secret : null);
             InitializeComponent();
             InitLinkReveal();
             Focus();
@@ -40,7 +45,7 @@ namespace SoftU2FDaemon.PasswordProtection
             {
                 // intercept user typing and type into SecureString _secret instead of PasswordFormTextBox
                 var changeStart = PasswordBox.SelectionStart;
-                _secret.InsertAt(changeStart, e.KeyChar);
+                secret.InsertAt(changeStart, e.KeyChar);
                 // replace the event character with ● even before it gets handled by PasswordFormTextBox
                 e.KeyChar = SECRET_CHAR;
                 ChangedAtEvent?.Invoke(this, new() { ChangedStart = changeStart });
@@ -51,7 +56,7 @@ namespace SoftU2FDaemon.PasswordProtection
         {
             // should not contain non-hidden chars, parts or whole passwords in *most* cases (typing, paste)
             var chars = PasswordBox.Text.ToCharArray();
-            var lenDiff = chars.Length - _secret.Length;
+            var lenDiff = chars.Length - secret.Length;
             var changeEnd = PasswordBox.SelectionStart;
             var changeStart = changeEnd;
 
@@ -64,19 +69,19 @@ namespace SoftU2FDaemon.PasswordProtection
 
             for (; lenDiff > 0; --lenDiff)
             {
-                _secret.InsertAt(changeStart, SECRET_CHAR);
+                secret.InsertAt(changeStart, SECRET_CHAR);
             }
 
             // should handle backspace and delete
             for (; lenDiff < 0; ++lenDiff)
             {
-                _secret.RemoveAt(changeStart);
+                secret.RemoveAt(changeStart);
             }
 
             // if there were non-hidden password chars, hide now
             for (var i = changeStart; i < changeEnd; ++i)
             {
-                _secret.SetAt(i, chars[i]);
+                secret.SetAt(i, chars[i]);
                 chars[i] = SECRET_CHAR;
             }
 
@@ -106,11 +111,11 @@ namespace SoftU2FDaemon.PasswordProtection
                 var pos = changeStart + i;
                 if (pos <= changeEnd)
                 {
-                    _secret.SetAt(pos, toPaste[i]);
+                    secret.SetAt(pos, toPaste[i]);
                 }
                 else
                 {
-                    _secret.InsertAt(pos, toPaste[i]);
+                    secret.InsertAt(pos, toPaste[i]);
                 }
 
                 // replace already pasted chars with ● symbols in memory
@@ -120,7 +125,7 @@ namespace SoftU2FDaemon.PasswordProtection
             // If pasted less that was selected
             for (var i = newEnd; i < changeEnd; ++i)
             {
-                _secret.RemoveAt(newEnd);
+                secret.RemoveAt(newEnd);
             }
 
             // Paste a string of ● symbols into PasswordFormTextBox
@@ -147,7 +152,7 @@ namespace SoftU2FDaemon.PasswordProtection
                 return;
             }
 
-            var len = _secret.Length;
+            var len = secret.Length;
             var toHide = new char[len];
             for (var i = 0; i < len; ++i)
             {
@@ -168,7 +173,7 @@ namespace SoftU2FDaemon.PasswordProtection
             IntPtr valuePtr = IntPtr.Zero;
             try
             {
-                valuePtr = Marshal.SecureStringToGlobalAllocUnicode(_secret);
+                valuePtr = Marshal.SecureStringToGlobalAllocUnicode(secret);
                 PasswordBox.PasswordChar = '\0';
                 PasswordBox.Text = Marshal.PtrToStringUni(valuePtr);
                 LinkReveal.LinkVisited = true;
@@ -179,6 +184,32 @@ namespace SoftU2FDaemon.PasswordProtection
             }
         }
 
+        #endregion
+
+        #region IEstimatedOn implementor
+        private class PFormEstimation : IEstimatedOn
+        {
+            private readonly PasswordForm f;
+
+            internal protected PFormEstimation(PasswordForm form) => f = form;
+
+            public bool EstimationVisible
+            {
+                get => f.EstimationBox.Visible;
+                set { f.EstimationBox.Visible = value; f.Height = value ? 320 : 128; }
+            }
+
+            public string EstimationText { get => f.EstimationBox.Text; set => f.EstimationBox.Text = value; }
+            public bool ScoreVisible { get => f.ScoreIndicator.Visible; set => f.ScoreIndicator.Visible = value; }
+            public Color ScoreForeColor { get => f.ScoreIndicator.ForeColor; set => f.ScoreIndicator.ForeColor = value; }
+            public Color ScoreBackColor { get => f.ScoreIndicator.BackColor; set => f.ScoreIndicator.BackColor = value; }
+            public string ScoreText { get => f.ScoreIndicator.Text; set => f.ScoreIndicator.Text = value; }
+
+            public event EventHandler<ChangedAtEventArgs> ChangedAtEvent { add => f.ChangedAtEvent += value; remove => f.ChangedAtEvent -= value; }
+
+            public event EventHandler EstimateTick { add => f.EstimateTimer.Tick += value; remove => f.EstimateTimer.Tick -= value; }
+
+        }
         #endregion
     }
 }

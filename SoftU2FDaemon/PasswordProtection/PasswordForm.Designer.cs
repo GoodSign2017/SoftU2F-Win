@@ -95,7 +95,6 @@
             // ValidateTimer
             // 
             EstimateTimer.Enabled = true;
-            EstimateTimer.Tick += EstimateTimer_Tick;
             // 
             // ValidationBox
             // 

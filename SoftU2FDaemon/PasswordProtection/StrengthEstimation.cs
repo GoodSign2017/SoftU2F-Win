@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Text;
 using Zxcvbn;
+using ZxcvbnCore = Zxcvbn.Core;
 
 namespace SoftU2FDaemon.PasswordProtection
 {
-    partial class PasswordForm
+    class StrengthEstimation
     {
         internal static readonly PasswordStrength PASS_STRENGTH_NONE = new("Score", Color.LightGray, Color.DimGray);
         internal static readonly PasswordStrength PASS_STRENGTH_WEAK = new("Weak", Color.OrangeRed, Color.Black);
@@ -26,18 +28,28 @@ namespace SoftU2FDaemon.PasswordProtection
         private bool estimated;
         private bool goodEnough;
         private int? goodEnoughFrom;
-        private event EventHandler<ChangedAtEventArgs> ChangedAtEvent;
         private PasswordStrength currentPasswordStrength;
         private StringBuilder zxcvbnOut;
+        private readonly IEstimatedOn componentAccess;
+        private readonly Func<SecureString> secretAccess;
+
+        private SecureString Secret => secretAccess();
 
         private bool _estimateStrength = false;
+
         public bool EstimateStrength
         {
-            get { return _estimateStrength; }
+            get => _estimateStrength;
             set { _estimateStrength = value; InitEstimation(); }
         }
 
-        private void InitEstimation()
+        public StrengthEstimation(IEstimatedOn componentAccess, Func<SecureString> secretAccess)
+        {
+            this.componentAccess = componentAccess;
+            this.secretAccess = secretAccess;
+        }
+
+        public void InitEstimation()
         {
             ResetEstimation();
             PerformEstimation();
@@ -51,18 +63,19 @@ namespace SoftU2FDaemon.PasswordProtection
 
             if (EstimateStrength)
             {
-                ChangedAtEvent += OnChangedAtEvent;
+                componentAccess.EstimateTick += EstimateTimer_Tick;
+                componentAccess.ChangedAtEvent += OnChangedAtEvent;
             }
             else
             {
-                ChangedAtEvent = null;
+                componentAccess.EstimateTick -= EstimateTimer_Tick;
+                componentAccess.ChangedAtEvent -= OnChangedAtEvent;
             }
 
             currentPasswordStrength = PASS_STRENGTH_NONE;
             zxcvbnOut = EstimateStrength ? new StringBuilder() : null;
-            Height = EstimateStrength ? 320 : 128;
-            EstimationBox.Visible = EstimateStrength;
-            ScoreIndicator.Visible = EstimateStrength;
+            componentAccess.EstimationVisible = EstimateStrength;
+            componentAccess.ScoreVisible = EstimateStrength;
         }
 
         private void OnChangedAtEvent(object sender, ChangedAtEventArgs e)
@@ -75,28 +88,23 @@ namespace SoftU2FDaemon.PasswordProtection
             }
         }
 
-        private void EstimateTimer_Tick(object sender, EventArgs e)
-        {
-            PerformEstimation();
-        }
+        private void EstimateTimer_Tick(object sender, EventArgs e) => PerformEstimation();
 
         private void PerformEstimation()
         {
-            if (!EstimateStrength || estimated)
-            {
-                return;
-            }
+            if (!EstimateStrength || estimated) return;
 
-            if (_secret.Length > 0)
+            if (Secret.Length > 0)
             {
-                EstimationBox.Text = "Estimating strength of the password...";
+                componentAccess.EstimationText = "Estimating strength of the password...";
                 EstimateEvaluateWithZxcvbn();
             }
             else
             {
                 currentPasswordStrength = PASS_STRENGTH_NONE;
-                EstimationBox.Text = "The password will be estimated as you type";
+                componentAccess.EstimationText = "The password will be estimated as you type";
             }
+
             UpdateScoreIndicator();
             estimated = true;
         }
@@ -106,14 +114,14 @@ namespace SoftU2FDaemon.PasswordProtection
             IntPtr valuePtr = IntPtr.Zero;
             try
             {
-                valuePtr = Marshal.SecureStringToGlobalAllocUnicode(_secret);
+                valuePtr = Marshal.SecureStringToGlobalAllocUnicode(Secret);
                 var unsecuredPwd = Marshal.PtrToStringUni(valuePtr);
-                var result = Zxcvbn.Core.EvaluatePassword(unsecuredPwd);
+                var result = ZxcvbnCore.EvaluatePassword(unsecuredPwd);
                 var passwordStrength = GetPasswordStrengthByResult(result);
                 goodEnough = IsGoodEnoughPassword(passwordStrength, result);
-                goodEnoughFrom = goodEnough ? _secret.Length : null;
+                goodEnoughFrom = goodEnough ? Secret.Length : null;
                 currentPasswordStrength = passwordStrength;
-                EstimationBox.Text = GetEstimationResultText(result);
+                componentAccess.EstimationText = GetEstimationResultText(result);
             }
             finally
             {
@@ -163,18 +171,32 @@ namespace SoftU2FDaemon.PasswordProtection
 
         private void UpdateScoreIndicator()
         {
-            ScoreIndicator.Text = currentPasswordStrength.Text;
-            ScoreIndicator.ForeColor = currentPasswordStrength.ForeColor;
-            ScoreIndicator.BackColor = currentPasswordStrength.BackColor;
+            componentAccess.ScoreText = currentPasswordStrength.Text;
+            componentAccess.ScoreForeColor = currentPasswordStrength.ForeColor;
+            componentAccess.ScoreBackColor = currentPasswordStrength.BackColor;
         }
     }
 
-    internal class ChangedAtEventArgs : EventArgs
+    public interface IEstimatedOn
+    {
+        public bool EstimationVisible { get; set; }
+        public string EstimationText { get; set; }
+        public bool ScoreVisible { get; set; }
+        public Color ScoreForeColor { get; set; }
+        public Color ScoreBackColor { get; set; }
+        public string ScoreText { get; set; }
+
+        public event EventHandler<ChangedAtEventArgs> ChangedAtEvent;
+
+        public event EventHandler EstimateTick;
+    }
+
+    public class ChangedAtEventArgs : EventArgs
     {
         public int ChangedStart { get; set; }
     }
 
-    internal class PasswordStrength
+    public class PasswordStrength
     {
         public readonly string Text;
         public readonly Color BackColor;
